@@ -17,18 +17,28 @@ class LoginController extends Controller
 
     public function login(Request $request)
     {
-        $credentials = $request->only('user_name', 'user_pass');
+        // 1️⃣ Validación básica
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required'
+        ]);
 
-        $user = \App\Models\Usuarios::where('user_name', $credentials['user_name'])->first();
+        // 2️⃣ Buscar usuario en MongoDB
+        $user = Usuarios::where('email', $request->email)->first();
 
-        if ($user && Hash::check($credentials['user_pass'], $user->user_pass)) {
+        // 3️⃣ Verificar contraseña
+        if ($user && Hash::check($request->password, $user->password)) {
+
+            // 4️⃣ Autenticación con guard Mongo
             Auth::guard('usuarios')->login($user);
+
             return redirect()->intended('/libros/inicio');
         }
 
+        // 5️⃣ Error
         return back()->withErrors([
-            'user_name' => 'Las credenciales no coinciden con nuestros registros.',
-        ]);
+            'email' => 'Las credenciales no coinciden con nuestros registros.',
+        ])->withInput();
     }
 
     public function logout(Request $request)

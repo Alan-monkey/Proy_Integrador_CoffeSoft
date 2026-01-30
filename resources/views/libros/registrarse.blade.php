@@ -69,8 +69,8 @@
                 <div class="form-group">
                     <div class="input-container">
                         <i class="fas fa-user input-icon"></i>
-                        <input type="text" id="user_name" name="user_name" class="form-control" value="abi" required placeholder=" ">
-                        <label for="user_name" class="input-label">Nombre de Usuario</label>
+                        <input type="text" id="nombre" name="nombre" class="form-control" value="abi" required placeholder=" ">
+                        <label for="nombre" class="input-label">Nombre de Usuario</label>
                     </div>
                     <div class="input-helper">
                         <i class="fas fa-info-circle"></i>
@@ -78,11 +78,50 @@
                     </div>
                 </div>
 
+
+                <div class="form-group">
+                <div class="input-container">
+                    <i class="fas fa-map-marker-alt input-icon"></i>
+                    <input type="text" id="direccion" name="direccion" class="form-control" required placeholder=" ">
+                    <label for="direccion" class="input-label">Dirección</label>
+                </div>
+                <div class="input-helper">
+                    <i class="fas fa-info-circle"></i>
+                    Ingresa tu dirección completa (calle, número, colonia)
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="input-container">
+                    <i class="fas fa-phone input-icon"></i>
+                    <input type="tel" id="telefono" name="telefono" class="form-control" required placeholder=" ">
+                    <label for="telefono" class="input-label">Teléfono</label>
+                </div>
+                <div class="input-helper">
+                    <i class="fas fa-info-circle"></i>
+                    Ingresa un número telefónico válido (10 dígitos)
+                </div>
+            </div>
+
+
+
+                <div class="form-group">
+                    <div class="input-container">
+                        <i class="fas fa-envelope input-icon"></i>
+                        <input type="email" id="email" name="email" class="form-control" value="abi@ejemplo.com" required placeholder=" ">
+                        <label for="email" class="input-label">Correo electrónico</label>
+                    </div>
+                    <div class="input-helper">
+                        <i class="fas fa-info-circle"></i>
+                        Ingresa un correo electrónico válido y único
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <div class="input-container">
                         <i class="fas fa-lock input-icon"></i>
-                        <input type="password" id="user_pass" name="user_pass" class="form-control" value="abi" required placeholder=" ">
-                        <label for="user_pass" class="input-label">Contraseña</label>
+                        <input type="password" id="password" name="password" class="form-control" value="abi" required placeholder=" ">
+                        <label for="password" class="input-label">Contraseña</label>
                         <button type="button" class="password-toggle" id="togglePassword">
                             <i class="fas fa-eye"></i>
                         </button>

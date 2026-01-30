@@ -516,12 +516,12 @@
 
           @if ($usuario && $usuario->user_tipo == '0')
             <li class="nav-item">
-              <a class="nav-link active" href="/libros/crear">
+              <a class="nav-link active" href="/productos/crear">
                 <i class="fas fa-plus-circle"></i> Crear
               </a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="/libros/leer">
+              <a class="nav-link" href="/productos/leer">
                 <i class="fas fa-list"></i> Leer
               </a>
             </li>
@@ -549,7 +549,7 @@
           @else
             <!-- Usuarios que NO son tipo 0 -->
             <li class="nav-item">
-              <a class="nav-link" href="{{ URL('/libros/consultar') }}">
+              <a class="nav-link" href="{{ URL('/carrito') }}">
                 <i class="fas fa-shopping-cart"></i> Carrito
               </a>
             </li>

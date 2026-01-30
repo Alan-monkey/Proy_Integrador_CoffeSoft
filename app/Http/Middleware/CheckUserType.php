@@ -9,11 +9,17 @@ use Illuminate\Support\Facades\Auth;
 class CheckUserType
 {
     public function handle(Request $request, Closure $next, $type)
-    {
-        if (Auth::guard('usuarios')->check() && Auth::guard('usuarios')->user()->user_tipo != $type) {
-            return redirect('/libros/consultar');
-        }
-        
-        return $next($request);
+{
+    $user = Auth::guard('usuarios')->user();
+
+    if (!$user) {
+        return redirect()->route('login');
     }
+
+    if ((string) $user->user_tipo !== (string) $type) {
+        abort(403); // ⛔ sin loop
+    }
+
+    return $next($request);
+}
 }

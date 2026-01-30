@@ -29,27 +29,28 @@
 
             <!-- Formulario de login -->
             <form method="POST" action="{{ route('login') }}" class="login-form">
-                @csrf
-                
-                <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="fas fa-user input-icon"></i>
-                        <input type="text" id="user_name" name="user_name" class="form-input" placeholder="Nombre de Usuario" required>
-                    </div>
-                </div>
+    @csrf
+    
+    <div class="form-group">
+        <div class="input-wrapper">
+            <i class="fas fa-envelope input-icon"></i>
+            <input type="email" id="email" name="email" class="form-input" placeholder="Correo electrónico" required>
+        </div>
+    </div>
 
-                <div class="form-group">
-                    <div class="input-wrapper">
-                        <i class="fas fa-lock input-icon"></i>
-                        <input type="password" id="user_pass" name="user_pass" class="form-input" placeholder="Contraseña" required>
-                    </div>
-                </div>
+    <div class="form-group">
+        <div class="input-wrapper">
+            <i class="fas fa-lock input-icon"></i>
+            <input type="password" id="password" name="password" class="form-input" placeholder="Contraseña" required>
+        </div>
+    </div>
 
-                <button type="submit" class="login-btn">
-                    <i class="fas fa-sign-in-alt"></i>
-                    Iniciar Sesión
-                </button>
-            </form>
+    <button type="submit" class="login-btn">
+        <i class="fas fa-sign-in-alt"></i>
+        Iniciar Sesión
+    </button>
+</form>
+
 
             <!-- Mensajes de error -->
             @if ($errors->any())

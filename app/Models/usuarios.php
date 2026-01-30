@@ -1,30 +1,30 @@
 <?php
 
+
 namespace App\Models;
 
+use MongoDB\Laravel\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
 
-class usuarios extends Authenticatable
+class Usuarios extends Authenticatable
 {
     use HasFactory;
 
-    protected $table = 'usuarios';
+    protected $connection = 'mongodb';
+    protected $collection = 'usuarios';
 
     protected $fillable = [
-        'user_name',
-        'user_pass',
+        'nombre',
+        'email',
+        'password',
+        'direccion',
+        'telefono',
         'user_tipo',
     ];
 
     protected $hidden = [
-        'user_pass',
+        'password',
     ];
-
-    public function getAuthPassword()
-    {
-        return $this->user_pass;
-    }
 
     public $timestamps = false;
 }

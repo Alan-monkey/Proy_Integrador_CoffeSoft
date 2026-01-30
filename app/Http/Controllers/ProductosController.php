@@ -4,9 +4,12 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Producto;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 
 class ProductosController extends Controller
 {
+
     public function __construct()
     {
         $this->middleware('auth:usuarios');

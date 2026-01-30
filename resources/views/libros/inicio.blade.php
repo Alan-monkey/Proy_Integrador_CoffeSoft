@@ -7,7 +7,7 @@
             <div class="coffee-cup-icon">
                 <i class="fas fa-coffee"></i>
             </div>
-            <h1 class="welcome-title">¡Hola, {{ $user->user_name }}!</h1>
+            <h1 class="welcome-title">¡Hola, {{ $user->nombre }}!</h1>
             <h2 class="welcome-subtitle">Bienvenido a CoffeSoft</h2>
             
             <div class="alert alert-coffee">
@@ -24,6 +24,10 @@
             <i class="fas fa-exclamation-triangle"></i> No has iniciado sesión.
         </div>
     @endif
+
+    <button class="coffee-btn" data-bs-toggle="modal" data-bs-target="#backupModal">
+    <i class="fas fa-database"></i> Respaldar Base de Datos
+</button>
 
     <section class="coffee-hero">
         <div class="coffee-shop-scene">
@@ -485,5 +489,29 @@
 
 <!-- Font Awesome for Icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<div class="modal fade" id="backupModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-database"></i> Respaldo de Base de Datos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body text-center">
+                <p>¿Deseas descargar un respaldo completo de la base de datos?</p>
+                <small class="text-muted">El archivo se descargará automáticamente</small>
+            </div>
+
+            <div class="modal-footer">
+                <button class="coffee-btn" onclick="window.location.href='/backup/mongo'">
+                    <i class="fas fa-download"></i> Descargar respaldo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 @endsection

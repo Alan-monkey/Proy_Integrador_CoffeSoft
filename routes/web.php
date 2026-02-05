@@ -5,7 +5,7 @@ use App\Http\Controllers\ProductosController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\RegistrarseController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\carritoController;
+use App\Http\Controllers\CarritoController;
 use App\Http\Controllers\BackupController;
 
 Route::get('/', function () {
@@ -37,8 +37,18 @@ Route::post('/productos/destroy', [ProductosController::class, 'destroy'])->name
 
 Route::get('/backup/mongo', [BackupController::class, 'download'])->middleware('auth:usuarios');
 
-Route::get('/carrito', [carritoController::class, 'carrito'])->name('/carrito');
-});
+Route::get('/carrito', [CarritoController::class, 'carrito'])->name('/carrito');
+// routes/web.php
+Route::post('/carrito/agregar/{id}', [CarritoController::class, 'agregar'])
+    ->name('carrito.agregar');
+
+Route::get('/carrito', [CarritoController::class, 'ver'])
+    ->name('carrito.ver');
+    Route::delete('/carrito/eliminar/{id}', [CarritoController::class, 'eliminar'])->name('carrito.eliminar');
+    Route::get('/pago', [CarritoController::class, 'mostrarPago'])->name('carrito.mostrar-pago');
+    Route::post('/procesar-pago', [CarritoController::class, 'procesarPago'])->name('carrito.procesar-pago');
+    Route::get('/pago-exito', [CarritoController::class, 'pagoExito'])->name('carrito.pago-exito');
+    Route::get('/descargar-ticket', [CarritoController::class, 'descargarTicket'])->name('carrito.descargar-ticket');    });
 
 
 

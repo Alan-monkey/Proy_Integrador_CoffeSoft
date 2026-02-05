@@ -25,9 +25,13 @@
         </div>
     @endif
 
-    <button class="coffee-btn" data-bs-toggle="modal" data-bs-target="#backupModal">
-    <i class="fas fa-database"></i> Respaldar Base de Datos
-</button>
+@if ($user && $user->user_tipo == '0')
+    <div class="mt-3">
+        <button class="coffee-btn" data-bs-toggle="modal" data-bs-target="#backupModal">
+            <i class="fas fa-database"></i> Respaldar Base de Datos
+        </button>
+    </div>
+@endif
 
     <section class="coffee-hero">
         <div class="coffee-shop-scene">

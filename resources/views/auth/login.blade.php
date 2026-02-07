@@ -71,6 +71,11 @@
             <div class="login-footer">
                 <p>¿Primera vez aquí? <a href="#" class="footer-link">Contáctanos</a></p>
             </div>
+            <div class="mt-3 text-center">
+    <a href="{{ route('password.forgot') }}" class="text-decoration-none">
+        ¿Olvidaste tu contraseña?
+    </a>
+</div>
         </div>
     </div>
 </div>

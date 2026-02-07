@@ -11,7 +11,9 @@
         "jenssegers/mongodb": "^4.8",
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.3",
-        "laravel/tinker": "^2.8"
+        "laravel/tinker": "^2.8",
+        "mongodb/mongodb": "^1.16",
+        "spatie/laravel-backup": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9.1",
@@ -27,7 +29,10 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        }
+        },
+        "files": [
+        "app/helpers.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
@@ -65,4 +70,6 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true
+    
+
 }

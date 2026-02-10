@@ -460,6 +460,9 @@
             text-align: center;
             margin-top: 3rem;
         }
+        .map-container {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
 
         .footer p {
             margin: 0;
@@ -515,6 +518,11 @@
           @endphp
 
           @if ($usuario && $usuario->user_tipo == '0')
+          <li class="nav-item">
+              <a class="nav-link" href="{{ URL('/libros/inicio') }}">
+                <i class="fas fa-user-tag"></i> Inicio
+              </a>
+            </li>
             <li class="nav-item">
               <a class="nav-link active" href="/productos/crear">
                 <i class="fas fa-plus-circle"></i> Crear
@@ -530,11 +538,7 @@
                 <i class="fas fa-trash-alt"></i> Eliminar
               </a>
             </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ URL('/libros/consultar') }}">
-                <i class="fas fa-search"></i> Consultar por ID
-              </a>
-            </li>
+            
             <li class="nav-item">
               <a class="nav-link" href="{{ URL('/libros/registrarse') }}">
                 <i class="fas fa-user-plus"></i> Registrar Usuario
@@ -543,6 +547,11 @@
             <li class="nav-item">
               <a class="nav-link" href="{{ URL('/carrito') }}">
                 <i class="fas fa-shopping-cart"></i> Carrito de compras
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ URL('/backups') }}">
+                <i class="fas fa-database"></i> Respaldos
               </a>
             </li>
 
@@ -623,11 +632,46 @@
     </div>
 
     <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <p>&copy; 2023 Café Sofft - Sistema de Gestión. Todos los derechos reservados.</p>
+    <footer class="footer py-4 bg-light mt-auto">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6">
+                <h5>Universidad Tecnológica del Valle de Toluca</h5>
+                <p class="mb-1">Carretera del Departamento del D.F. km 7.5</p>
+                <p class="mb-1">Col. Santa María Atarasquillo, Lerma, Estado de México. C.P. 52044</p>
+                <p class="mb-3"><i class="fas fa-phone"></i> Tel: 728 6884444 / 728 6884396</p>
+            </div>
+            
+            <div class="col-md-6">
+                <!-- Mapa interactivo de Google Maps -->
+                <div class="map-container" style="border-radius: 8px; overflow: hidden; height: 200px;">
+                    <iframe 
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3765.625098134897!2d-99.51218892501902!3d19.301549242124833!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x85cd8b6c84e08f25%3A0xf4083c2c5bf022f9!2sUniversidad%20Tecnol%C3%B3gica%20del%20Valle%20de%20Toluca!5e0!3m2!1ses!2smx!4v1749770800000!5m2!1ses!2smx" 
+                        width="100%" 
+                        height="100%" 
+                        style="border:0;" 
+                        allowfullscreen="" 
+                        loading="lazy" 
+                        referrerpolicy="no-referrer-when-downgrade">
+                    </iframe>
+                </div>
+            </div>
         </div>
-    </footer>
+        
+        <hr class="my-3">
+        
+        <div class="row">
+            <div class="col-12 text-center">
+                <p class="mb-0 text-muted">
+                    &copy; {{ date('Y') }} Sistema de Gestión. Proyecto Académico.
+                </p>
+                <small class="text-muted">
+                    Desarrollado como parte de las actividades académicas de la UTVT.
+                </small>
+            </div>
+        </div>
+    </div>
+</footer>
 
     <!-- Bootstrap 5 bundle (incluye Popper) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-..." crossorigin="anonymous"></script>

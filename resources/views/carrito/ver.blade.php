@@ -109,11 +109,13 @@
                             </div>
                             <div class="col-md-6 d-flex flex-column justify-content-end">
                                 <button class="btn btn-success btn-lg mb-2">
-                                    <i class="fas fa-credit-card"></i> Proceder al Pago
+                                    <i class="fas fa-credit-card"></i> Pago con tarjeta
                                 </button>
-                                <button class="btn btn-outline-primary btn-lg">
-                                    <i class="fas fa-shopping-bag"></i> Continuar Comprando
-                                </button>
+                                
+                                <a href="{{ route('carrito.mostrar-pago') }}" class="btn btn-success btn-lg">
+                                    <i class="fas fa-cash-register"></i> Pago en Efectivo
+                                </a>
+
                             </div>
                         </div>
                     @endif
@@ -171,11 +173,7 @@
 
             <!-- Contador del Carrito -->
             @if(!empty($carrito))
-<div class="d-grid gap-2 mt-4">
-    <a href="{{ route('carrito.mostrar-pago') }}" class="btn btn-success btn-lg">
-        <i class="fas fa-cash-register"></i> Proceder al Pago
-    </a>
-</div>
+
 @endif
         </div>
     </div>

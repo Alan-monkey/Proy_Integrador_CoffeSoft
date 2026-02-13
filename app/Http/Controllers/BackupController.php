@@ -253,61 +253,63 @@ class BackupController extends Controller
     }
     
     public function restoreBackup(Request $request)
-    {
-        $request->validate([
-            'backup_file' => 'required|string',
-            'collections_to_restore' => 'required|array',
-            'restore_mode' => 'required|in:replace,merge'
-        ]);
+{
+    $request->validate([
+        'backup_file' => 'required|string',
+        'collections_to_restore' => 'required|array',
+        'restore_mode' => 'required|in:replace,merge'
+    ]);
+    
+    $filename = $request->backup_file;
+    $filePath = $this->backupPath . $filename;
+    
+    if (!file_exists($filePath)) {
+        return back()->withErrors(['error' => 'El archivo de backup no existe.']);
+    }
+    
+    // Obtener información del usuario que está restaurando
+    $user = Auth::guard('usuarios')->user();
+    $userName = $user ? $user->nombre : 'Sistema';
+    
+    try {
+        // Extraer si es ZIP
+        $tempDir = $this->backupPath . 'restore_temp_' . time() . '/';
+        mkdir($tempDir, 0755, true);
         
-        $filename = $request->backup_file;
-        $filePath = $this->backupPath . $filename;
-        
-        if (!file_exists($filePath)) {
-            return back()->withErrors(['error' => 'El archivo de backup no existe.']);
+        if (pathinfo($filename, PATHINFO_EXTENSION) === 'zip') {
+            $zip = new ZipArchive;
+            if ($zip->open($filePath) === TRUE) {
+                $zip->extractTo($tempDir);
+                $zip->close();
+            } else {
+                throw new \Exception('No se pudo abrir el archivo ZIP.');
+            }
+        } else {
+            copy($filePath, $tempDir . $filename);
         }
         
-        // Obtener información del usuario que está restaurando
-        $user = Auth::guard('usuarios')->user();
-        $userName = $user ? $user->nombre : 'Sistema';
+        // Leer metadatos
+        $metadataPath = $tempDir . 'metadata.json';
+        if (!file_exists($metadataPath)) {
+            throw new \Exception('Archivo de metadatos no encontrado en el backup.');
+        }
         
-        try {
-            // Extraer si es ZIP
-            $tempDir = $this->backupPath . 'restore_temp_' . time() . '/';
-            mkdir($tempDir, 0755, true);
-            
-            if (pathinfo($filename, PATHINFO_EXTENSION) === 'zip') {
-                $zip = new ZipArchive;
-                if ($zip->open($filePath) === TRUE) {
-                    $zip->extractTo($tempDir);
-                    $zip->close();
-                } else {
-                    throw new \Exception('No se pudo abrir el archivo ZIP.');
-                }
-            } else {
-                copy($filePath, $tempDir . $filename);
-            }
-            
-            // Leer metadatos
-            $metadataPath = $tempDir . 'metadata.json';
-            if (!file_exists($metadataPath)) {
-                throw new \Exception('Archivo de metadatos no encontrado en el backup.');
-            }
-            
-            $metadata = json_decode(file_get_contents($metadataPath), true);
-            $originalCreator = $metadata['created_by'] ?? 'Desconocido';
-            $backupName = $metadata['backup_name'] ?? $filename;
-            
-            Log::info("Iniciando restauración de backup '{$backupName}' (creado por {$originalCreator}) por {$userName}");
-            
-            // Conectar a MongoDB
-            $client = new Client(env('MONGODB_URI', 'mongodb://localhost:27017'));
-            $database = env('MONGODB_DATABASE', 'CoffeSoft');
-            $db = $client->selectDatabase($database);
-            
-            $restoredCollections = [];
-            
-            foreach ($request->collections_to_restore as $collectionName) {
+        $metadata = json_decode(file_get_contents($metadataPath), true);
+        $originalCreator = $metadata['created_by'] ?? 'Desconocido';
+        $backupName = $metadata['backup_name'] ?? $filename;
+        
+        Log::info("Iniciando restauración de backup '{$backupName}' (creado por {$originalCreator}) por {$userName}");
+        
+        // Conectar a MongoDB
+        $client = new Client(env('MONGODB_URI', 'mongodb://localhost:27017'));
+        $database = env('MONGODB_DATABASE', 'CoffeSoft');
+        $db = $client->selectDatabase($database);
+        
+        $restoredCollections = [];
+        $errors = [];
+        
+        foreach ($request->collections_to_restore as $collectionName) {
+            try {
                 $collection = $db->selectCollection($collectionName);
                 
                 // Buscar archivo de datos
@@ -321,11 +323,12 @@ class BackupController extends Controller
                 }
                 
                 if (!$dataFile) {
+                    $errors[] = "No se encontró archivo de datos para la colección: {$collectionName}";
                     continue;
                 }
                 
+                // Modo REPLACE - eliminar todos los documentos existentes
                 if ($request->restore_mode === 'replace') {
-                    // Eliminar todos los documentos existentes
                     $deletedCount = $collection->deleteMany([])->getDeletedCount();
                     Log::info("Colección {$collectionName}: eliminados {$deletedCount} documentos existentes");
                 }
@@ -336,12 +339,56 @@ class BackupController extends Controller
                 
                 if ($extension === 'json') {
                     $data = json_decode(file_get_contents($dataFile), true);
+                    
+                    // Log del primer documento para depuración
                     if (!empty($data)) {
-                        $result = $collection->insertMany($data);
-                        $restoredCount = $result->getInsertedCount();
+                        Log::info("Primer documento de {$collectionName} antes de convertir:", ['documento' => $data[0]]);
+                    }
+                    
+                    if (!empty($data)) {
+                        foreach ($data as $index => $document) {
+                            try {
+                                // Convertir el documento del formato MongoDB Extended JSON a BSON
+                                $convertedDoc = $this->convertMongoDBDocument($document);
+                                
+                                // Log del documento convertido
+                                if ($index === 0) {
+                                    Log::info("Primer documento de {$collectionName} después de convertir:", ['documento' => $convertedDoc]);
+                                }
+                                
+                                if ($request->restore_mode === 'merge') {
+                                    $filter = ['_id' => $convertedDoc['_id']];
+                                    $result = $collection->replaceOne($filter, $convertedDoc, ['upsert' => true]);
+                                    if ($result->getUpsertedCount() > 0 || $result->getModifiedCount() > 0) {
+                                        $restoredCount++;
+                                    }
+                                } else {
+                                    $result = $collection->insertOne($convertedDoc);
+                                    if ($result->getInsertedCount() > 0) {
+                                        $restoredCount++;
+                                    }
+                                }
+                                
+                            } catch (\MongoDB\Driver\Exception\BulkWriteException $e) {
+                                if ($e->getCode() == 11000 && $request->restore_mode === 'merge') {
+                                    // Error de clave duplicada, intentar actualizar
+                                    $filter = ['_id' => $convertedDoc['_id']];
+                                    $result = $collection->replaceOne($filter, $convertedDoc);
+                                    if ($result->getModifiedCount() > 0) {
+                                        $restoredCount++;
+                                    }
+                                } else {
+                                    Log::error("Error BulkWrite en documento " . ($index + 1) . ": " . $e->getMessage());
+                                    throw $e;
+                                }
+                            } catch (\Exception $e) {
+                                Log::error("Error en documento " . ($index + 1) . ": " . $e->getMessage());
+                                throw $e;
+                            }
+                        }
                     }
                 } elseif ($extension === 'csv') {
-                    $restoredCount = $this->importFromCSV($collection, $dataFile);
+                    $restoredCount = $this->importFromCSV($collection, $dataFile, $request->restore_mode);
                 }
                 
                 $restoredCollections[] = [
@@ -350,31 +397,102 @@ class BackupController extends Controller
                 ];
                 
                 Log::info("Colección {$collectionName}: restaurados {$restoredCount} documentos");
-            }
-            
-            // Limpiar directorio temporal
-            $this->deleteDirectory($tempDir);
-            
-            // Registrar la restauración
-            Log::info("Backup '{$backupName}' restaurado exitosamente por {$userName}");
-            Log::info("Colecciones restauradas: " . json_encode($restoredCollections));
-            
-            $totalRestored = array_sum(array_column($restoredCollections, 'restored_count'));
-            
-            return redirect()->route('backups.index')
-                ->with('success', 'Backup restaurado exitosamente.')
-                ->with('info', "Backup original creado por: {$originalCreator} | Restaurado por: {$userName} | Documentos restaurados: {$totalRestored}");
                 
-        } catch (\Exception $e) {
-            if (file_exists($tempDir)) {
-                $this->deleteDirectory($tempDir);
+            } catch (\Exception $e) {
+                $errors[] = "Error en colección {$collectionName}: " . $e->getMessage();
+                Log::error("Error restaurando {$collectionName}: " . $e->getMessage());
+                Log::error($e->getTraceAsString());
+                continue;
             }
+        }
+        
+        // Limpiar directorio temporal
+        $this->deleteDirectory($tempDir);
+        
+        // Registrar la restauración
+        $totalRestored = array_sum(array_column($restoredCollections, 'restored_count'));
+        
+        Log::info("Backup '{$backupName}' restaurado exitosamente por {$userName}");
+        
+        $message = "Backup restaurado exitosamente. Documentos restaurados: {$totalRestored}";
+        
+        if (!empty($errors)) {
+            $message .= " Con algunos errores.";
+            return redirect()->route('backups.index')
+                ->with('warning', $message)
+                ->with('info', "Backup original creado por: {$originalCreator} | Restaurado por: {$userName}")
+                ->with('errors', $errors);
+        }
+        
+        return redirect()->route('backups.index')
+            ->with('success', $message)
+            ->with('info', "Backup original creado por: {$originalCreator} | Restaurado por: {$userName} | Documentos restaurados: {$totalRestored}");
             
-            Log::error("Error al restaurar backup por {$userName}: " . $e->getMessage());
-            
-            return back()->withErrors(['error' => 'Error al restaurar backup: ' . $e->getMessage()]);
+    } catch (\Exception $e) {
+        if (isset($tempDir) && file_exists($tempDir)) {
+            $this->deleteDirectory($tempDir);
+        }
+        
+        Log::error("Error al restaurar backup por {$userName}: " . $e->getMessage());
+        Log::error($e->getTraceAsString());
+        
+        return back()->withErrors(['error' => 'Error al restaurar backup: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Convierte un documento de MongoDB Extended JSON a formato BSON válido
+ */
+private function convertMongoDBDocument($document)
+{
+    if (!is_array($document)) {
+        return $document;
+    }
+    
+    $converted = [];
+    
+    foreach ($document as $key => $value) {
+        // Si el valor es un array con estructura MongoDB Extended JSON
+        if (is_array($value)) {
+            // Caso especial: _id con formato MongoDB
+            if ($key === '_id' && isset($value['$oid'])) {
+                $converted[$key] = new \MongoDB\BSON\ObjectId($value['$oid']);
+            }
+            // Fechas
+            elseif (isset($value['$date'])) {
+                if (is_array($value['$date']) && isset($value['$date']['$numberLong'])) {
+                    $converted[$key] = new \MongoDB\BSON\UTCDateTime((int)$value['$date']['$numberLong']);
+                } elseif (is_string($value['$date'])) {
+                    $converted[$key] = new \MongoDB\BSON\UTCDateTime(strtotime($value['$date']) * 1000);
+                } else {
+                    $converted[$key] = $this->convertMongoDBDocument($value);
+                }
+            }
+            // Números
+            elseif (isset($value['$numberInt'])) {
+                $converted[$key] = (int)$value['$numberInt'];
+            }
+            elseif (isset($value['$numberLong'])) {
+                $converted[$key] = (int)$value['$numberLong'];
+            }
+            elseif (isset($value['$numberDouble'])) {
+                $converted[$key] = (float)$value['$numberDouble'];
+            }
+            // Binario
+            elseif (isset($value['$binary'])) {
+                $converted[$key] = base64_decode($value['$binary']);
+            }
+            // Si es un array normal, procesar recursivamente
+            else {
+                $converted[$key] = $this->convertMongoDBDocument($value);
+            }
+        } else {
+            $converted[$key] = $value;
         }
     }
+    
+    return $converted;
+}
     
     // Métodos auxiliares
     
@@ -420,87 +538,148 @@ class BackupController extends Controller
     }
     
     private function exportToCSV($collectionName, $documents, $tempDir)
-    {
-        $filename = $tempDir . $collectionName . '.csv';
-        
-        if (empty($documents)) {
-            file_put_contents($filename, '');
-            return $filename;
-        }
-        
-        $fp = fopen($filename, 'w');
-        
-        // Obtener headers del primer documento
-        $firstDoc = (array) $documents[0];
-        $headers = array_keys($firstDoc);
-        fputcsv($fp, $headers);
-        
-        // Escribir datos
-        foreach ($documents as $doc) {
-            $doc = (array) $doc;
-            
-            // Asegurar que todos los campos existan
-            $row = [];
-            foreach ($headers as $header) {
-                $row[] = isset($doc[$header]) ? 
-                    (is_array($doc[$header]) ? json_encode($doc[$header]) : $doc[$header]) : 
-                    '';
-            }
-            
-            fputcsv($fp, $row);
-        }
-        
-        fclose($fp);
+{
+    $filename = $tempDir . $collectionName . '.csv';
+    
+    if (empty($documents)) {
+        file_put_contents($filename, '');
         return $filename;
     }
     
-    private function importFromCSV($collection, $csvFile)
-    {
-        $fp = fopen($csvFile, 'r');
-        $headers = fgetcsv($fp);
-        $insertedCount = 0;
+    $fp = fopen($filename, 'w');
+    
+    // Obtener headers del primer documento
+    $firstDoc = (array) $documents[0];
+    $headers = array_keys($firstDoc);
+    fputcsv($fp, $headers);
+    
+    // Escribir datos
+    foreach ($documents as $doc) {
+        $doc = (array) $doc;
+        $row = [];
         
-        while (($row = fgetcsv($fp)) !== FALSE) {
-            $document = [];
-            foreach ($headers as $index => $header) {
-                if (isset($row[$index])) {
-                    // Intentar decodificar JSON si parece ser un array/objeto
-                    $value = $row[$index];
-                    if (!empty($value) && ($value[0] === '[' || $value[0] === '{')) {
-                        $decoded = json_decode($value, true);
-                        if (json_last_error() === JSON_ERROR_NONE) {
-                            $value = $decoded;
-                        }
-                    }
-                    $document[$header] = $value;
-                }
+        foreach ($headers as $header) {
+            $value = $doc[$header] ?? '';
+            
+            // Convertir ObjectId a string para CSV
+            if ($value instanceof \MongoDB\BSON\ObjectId) {
+                $value = (string) $value;
+            }
+            // Convertir fechas a string
+            elseif ($value instanceof \MongoDB\BSON\UTCDateTime) {
+                $value = $value->toDateTime()->format('Y-m-d H:i:s');
+            }
+            // Convertir arrays a JSON
+            elseif (is_array($value)) {
+                $value = json_encode($value);
             }
             
-            if (!empty($document)) {
-                $collection->insertOne($document);
-                $insertedCount++;
-            }
+            $row[] = $value;
         }
         
-        fclose($fp);
-        return $insertedCount;
+        fputcsv($fp, $row);
     }
     
-    private function createZip($files, $zipPath, $basePath)
-    {
-        $zip = new ZipArchive;
-        
-        if ($zip->open($zipPath, ZipArchive::CREATE) === TRUE) {
-            foreach ($files as $file) {
-                $relativePath = str_replace($basePath, '', $file);
-                $zip->addFile($file, $relativePath);
+    fclose($fp);
+    return $filename;
+}
+    
+    private function importFromCSV($collection, $csvFile, $mode = 'replace')
+{
+    $fp = fopen($csvFile, 'r');
+    $headers = fgetcsv($fp);
+    $insertedCount = 0;
+    
+    while (($row = fgetcsv($fp)) !== FALSE) {
+        $document = [];
+        foreach ($headers as $index => $header) {
+            if (isset($row[$index])) {
+                $value = $row[$index];
+                
+                // Decodificar JSON si es necesario
+                if (!empty($value) && ($value[0] === '[' || $value[0] === '{')) {
+                    $decoded = json_decode($value, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $value = $decoded;
+                    }
+                }
+                
+                // Manejar _id especial
+                if ($header === '_id') {
+                    try {
+                        $value = new \MongoDB\BSON\ObjectId($value);
+                    } catch (\Exception $e) {
+                        // Mantener como string
+                    }
+                }
+                
+                $document[$header] = $value;
             }
-            $zip->close();
-            return true;
         }
         
-        return false;
+        if (!empty($document)) {
+            try {
+                if ($mode === 'merge') {
+                    $filter = ['_id' => $document['_id']];
+                    $collection->replaceOne($filter, $document, ['upsert' => true]);
+                    $insertedCount++;
+                } else {
+                    $collection->insertOne($document);
+                    $insertedCount++;
+                }
+            } catch (\MongoDB\Driver\Exception\BulkWriteException $e) {
+                if ($e->getCode() == 11000 && $mode === 'merge') {
+                    $filter = ['_id' => $document['_id']];
+                    $collection->replaceOne($filter, $document);
+                    $insertedCount++;
+                } else {
+                    Log::warning("Error insertando documento en CSV: " . $e->getMessage());
+                }
+            }
+        }
     }
+    
+    fclose($fp);
+    return $insertedCount;
+}
+    
+    private function createZip($files, $zipPath, $basePath)
+{
+    $zip = new ZipArchive;
+    
+    if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+        foreach ($files as $file) {
+            if (file_exists($file)) {
+                // Obtener solo el nombre del archivo, no la ruta completa
+                $fileName = basename($file);
+                $zip->addFile($file, $fileName);
+            }
+        }
+        $zip->close();
+        
+        // Verificar que el ZIP se creó correctamente
+        if (file_exists($zipPath)) {
+            Log::info("ZIP creado exitosamente: {$zipPath}");
+            Log::info("Tamaño del ZIP: " . filesize($zipPath) . " bytes");
+            
+            // Verificar contenido del ZIP
+            $verifyZip = new ZipArchive;
+            if ($verifyZip->open($zipPath) === TRUE) {
+                Log::info("Archivos en el ZIP:");
+                for ($i = 0; $i < $verifyZip->numFiles; $i++) {
+                    $stat = $verifyZip->statIndex($i);
+                    Log::info(" - " . $stat['name']);
+                }
+                $verifyZip->close();
+            }
+        }
+        
+        return true;
+    }
+    
+    Log::error("No se pudo crear el ZIP en: {$zipPath}");
+    return false;
+}
     
     private function deleteDirectory($dir)
     {
@@ -517,24 +696,30 @@ class BackupController extends Controller
     /**
      * Obtiene los metadatos de un archivo de backup
      */
-    private function getBackupMetadata($filePath)
-    {
-        $metadata = [];
-        
-        // Si es un archivo ZIP, extraer y leer metadata
-        if (pathinfo($filePath, PATHINFO_EXTENSION) === 'zip') {
-            $zip = new ZipArchive;
-            if ($zip->open($filePath) === TRUE) {
-                $metadataContent = $zip->getFromName('metadata.json');
-                if ($metadataContent) {
-                    $metadata = json_decode($metadataContent, true);
-                }
-                $zip->close();
+   private function getBackupMetadata($filePath)
+{
+    $metadata = [];
+    
+    // Si es un archivo ZIP, extraer y leer metadata
+    if (pathinfo($filePath, PATHINFO_EXTENSION) === 'zip') {
+        $zip = new ZipArchive;
+        if ($zip->open($filePath) === TRUE) {
+            // Intentar leer metadata.json
+            $metadataContent = $zip->getFromName('metadata.json');
+            if ($metadataContent) {
+                $metadata = json_decode($metadataContent, true);
+                Log::info("Metadata encontrada en ZIP: " . json_encode($metadata));
+            } else {
+                Log::warning("No se encontró metadata.json en el ZIP");
             }
+            $zip->close();
+        } else {
+            Log::error("No se pudo abrir el ZIP: {$filePath}");
         }
-        
-        return $metadata;
     }
+    
+    return $metadata;
+}
     
     /**
      * Crea contenido de resumen en texto plano
@@ -597,4 +782,154 @@ class BackupController extends Controller
             'filename' => $filename
         ]);
     }
+    public function testRestore($filename)
+{
+    $filePath = $this->backupPath . $filename;
+    
+    if (!file_exists($filePath)) {
+        return response()->json(['error' => 'Archivo no encontrado'], 404);
+    }
+    
+    Log::info("TestRestore para: {$filename}");
+    
+    $collections = [];
+    $metadata = [];
+    
+    if (pathinfo($filename, PATHINFO_EXTENSION) === 'zip') {
+        $zip = new ZipArchive;
+        
+        if ($zip->open($filePath) === TRUE) {
+            Log::info("ZIP abierto correctamente, contiene " . $zip->numFiles . " archivos");
+            
+            // Primero intentamos leer metadata.json
+            $metadataContent = $zip->getFromName('metadata.json');
+            if ($metadataContent) {
+                $metadata = json_decode($metadataContent, true);
+                Log::info("Metadata cargada: " . json_encode($metadata));
+            }
+            
+            // Escanear todos los archivos en el ZIP para encontrar colecciones
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                $fileName = $stat['name'];
+                
+                Log::info("Archivo en ZIP: {$fileName}");
+                
+                // Identificar archivos JSON que podrían ser colecciones
+                if (pathinfo($fileName, PATHINFO_EXTENSION) === 'json' && 
+                    $fileName !== 'metadata.json' && 
+                    !str_contains($fileName, '_structure.json')) {
+                    
+                    $collectionName = pathinfo($fileName, PATHINFO_FILENAME);
+                    $collections[] = $collectionName;
+                    Log::info("Colección encontrada: {$collectionName}");
+                }
+            }
+            
+            $zip->close();
+        } else {
+            Log::error("No se pudo abrir el ZIP: {$filePath}");
+            return response()->json(['error' => 'No se pudo abrir el archivo ZIP'], 500);
+        }
+    }
+    
+    // Preparar respuesta
+    $response = [
+        'backup_name' => $metadata['backup_name'] ?? $filename,
+        'collections' => !empty($collections) ? $collections : ($metadata['collections'] ?? []),
+        'total_documents' => $metadata['total_documents'] ?? 0,
+        'created_by' => $metadata['created_by'] ?? 'Desconocido',
+        'created_at' => $metadata['created_at'] ?? date('Y-m-d H:i:s', filemtime($filePath)),
+        'format' => $metadata['format'] ?? 'zip',
+        'collections_details' => $metadata['collections_details'] ?? [],
+        'debug' => [
+            'files_in_zip' => $collections,
+            'metadata_collections' => $metadata['collections'] ?? []
+        ]
+    ];
+    
+    Log::info("Respuesta testRestore: " . json_encode($response));
+    
+    return response()->json($response);
+}
+public function debugBackup($filename)
+{
+    $filePath = $this->backupPath . $filename;
+    
+    if (!file_exists($filePath)) {
+        return "Archivo no encontrado: $filePath";
+    }
+    
+    $output = "=== DEBUG BACKUP: $filename ===\n\n";
+    
+    if (pathinfo($filename, PATHINFO_EXTENSION) === 'zip') {
+        $zip = new ZipArchive;
+        if ($zip->open($filePath) === TRUE) {
+            $output .= "CONTENIDO DEL ZIP:\n";
+            $output .= "-----------------\n";
+            
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $stat = $zip->statIndex($i);
+                $output .= "Archivo: " . $stat['name'] . " - Tamaño: " . $stat['size'] . " bytes\n";
+            }
+            
+            // Verificar metadata.json
+            $metadataContent = $zip->getFromName('metadata.json');
+            if ($metadataContent) {
+                $output .= "\nMETADATA ENCONTRADA:\n";
+                $output .= "-------------------\n";
+                $metadata = json_decode($metadataContent, true);
+                $output .= print_r($metadata, true);
+            } else {
+                $output .= "\nNO SE ENCONTRÓ metadata.json\n";
+            }
+            
+            $zip->close();
+        } else {
+            $output .= "No se pudo abrir el ZIP\n";
+        }
+    } else {
+        $output .= "No es un archivo ZIP\n";
+    }
+    
+    // Agregar información de la ruta
+    $output .= "\nRuta del backup: " . $this->backupPath . "\n";
+    
+    return "<pre>" . $output . "</pre>";
+}
+public function verifyRestore()
+{
+    try {
+        $client = new Client(env('MONGODB_URI', 'mongodb://localhost:27017'));
+        $database = env('MONGODB_DATABASE', 'CoffeSoft');
+        $db = $client->selectDatabase($database);
+        
+        $collections = ['pedidos', 'inventario', 'tb_productos', 'usuarios', 'ventas'];
+        $results = [];
+        
+        foreach ($collections as $collectionName) {
+            $collection = $db->selectCollection($collectionName);
+            $count = $collection->countDocuments();
+            
+            // Corregido: usar cursor y luego limitar
+            $cursor = $collection->find();
+            $sample = [];
+            foreach ($cursor as $doc) {
+                $sample[] = $doc;
+                break; // Solo tomamos el primero
+            }
+            
+            $results[$collectionName] = [
+                'count' => $count,
+                'has_data' => $count > 0,
+                'sample' => !empty($sample) ? json_encode($sample[0], JSON_PRETTY_PRINT) : 'No data'
+            ];
+        }
+        
+        return response()->json($results);
+        
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()]);
+    }
+}
 }

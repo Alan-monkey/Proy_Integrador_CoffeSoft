@@ -45,6 +45,9 @@ Route::post('/productos/destroy', [ProductosController::class, 'destroy'])->name
     Route::get('/backups/restore', [BackupController::class, 'restoreBackupForm'])->name('backups.restore.form');
     Route::get('/backups/restore/{filename}', [BackupController::class, 'restoreBackupForm'])->name('backups.restore.form.withfile');
     Route::post('/backups/restore', [BackupController::class, 'restoreBackup'])->name('backups.restore');
+    Route::get('/backups/test-restore/{filename}', [BackupController::class, 'testRestore'])->name('backups.test');
+    Route::get('/backups/debug/{filename}', [BackupController::class, 'debugBackup'])->name('backups.debug');
+    Route::get('/backups/verify', [BackupController::class, 'verifyRestore'])->name('backups.verify');
     
 Route::get('/carrito', [CarritoController::class, 'carrito'])->name('/carrito');
 // routes/web.php

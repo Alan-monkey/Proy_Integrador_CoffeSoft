@@ -15,7 +15,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'mysql'),
+    'default' => env('DB_CONNECTION', 'mongodb'),
 
     /*
     |--------------------------------------------------------------------------
@@ -94,14 +94,16 @@ return [
         ],
 
         'mongodb' => [
-    'driver'   => 'mongodb',
-    'host'     => env('DB_HOST', '127.0.0.1'),
-    'port'     => env('DB_PORT', 27017),
-    'database' => env('DB_DATABASE', 'CoffeSoft'),
-    'username' => env('DB_USERNAME', ''),
-    'password' => env('DB_PASSWORD', ''),
-    'options'  => []
-],
+        'driver'   => 'mongodb',
+        'host'     => env('MONGODB_HOST', '127.0.0.1'),
+        'port'     => env('MONGODB_PORT', 27017),
+        'database' => env('MONGODB_DATABASE', 'CoffeSoft2'),
+        'username' => env('MONGODB_USERNAME', ''),
+        'password' => env('MONGODB_PASSWORD', ''),
+        'options'  => [
+            'database' => env('MONGODB_AUTH_DATABASE', 'admin'), // Base de datos para autenticación
+        ],
+    ],
 
 
     ],

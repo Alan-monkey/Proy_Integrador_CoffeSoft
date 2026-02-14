@@ -48,6 +48,12 @@ Route::post('/productos/destroy', [ProductosController::class, 'destroy'])->name
     Route::get('/backups/test-restore/{filename}', [BackupController::class, 'testRestore'])->name('backups.test');
     Route::get('/backups/debug/{filename}', [BackupController::class, 'debugBackup'])->name('backups.debug');
     Route::get('/backups/verify', [BackupController::class, 'verifyRestore'])->name('backups.verify');
+
+
+Route::post('/backups/verify-password', [BackupController::class, 'verifyPassword'])->name('backups.verify-password');
+Route::post('/backups/verify-password-restore', [BackupController::class, 'verifyPasswordRestore'])->name('backups.verify-password-restore');
+Route::post('/backups/verify-password-download', [BackupController::class, 'verifyPasswordDownload'])->name('backups.verify-password-download');
+Route::post('/backups/verify-password-delete', [BackupController::class, 'verifyPasswordDelete'])->name('backups.verify-password-delete');
     
 Route::get('/carrito', [CarritoController::class, 'carrito'])->name('/carrito');
 // routes/web.php

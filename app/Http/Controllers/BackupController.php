@@ -10,18 +10,20 @@ use Carbon\Carbon;
 use ZipArchive;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use App\Http\Requests\VerifyPasswordRequest;
+use Illuminate\Support\Facades\Hash;
 
 class BackupController extends Controller
 {
     private $backupPath;
     
     public function __construct()
-    {
-        $this->backupPath = storage_path('app/backups/');
-        if (!file_exists($this->backupPath)) {
-            mkdir($this->backupPath, 0755, true);
-        }
+{
+    $this->backupPath = storage_path('app/backups/');
+    if (!file_exists($this->backupPath)) {
+        mkdir($this->backupPath, 0755, true);
     }
+}
     
     public function index()
     {
@@ -61,181 +63,256 @@ class BackupController extends Controller
     
     public function createBackupForm()
     {
-        // Obtener todas las colecciones de MongoDB
-        $collections = $this->getMongoCollections();
-        
-        return view('admin.backups.create', compact('collections'));
+        if (!session('backup_verified')) {
+        return redirect()->route('backups.index')
+            ->with('password_error', 'Debes verificar tu identidad primero.')
+            ->with('show_password_modal', true);
+    }
+    
+    // Resto del código...
+    $collections = $this->getMongoCollections();
+    return view('admin.backups.create', compact('collections'));
     }
     
     public function createBackup(Request $request)
-    {
-        $request->validate([
-            'name' => 'nullable|string|max:100',
-            'collections' => 'required|array',
-            'collections.*' => 'string',
-            'format' => 'required|in:json,csv,zip',
-            'include_structure' => 'boolean'
-        ]);
+{
+    $request->validate([
+        'name' => 'nullable|string|max:100',
+        'collections' => 'required|array',
+        'collections.*' => 'string',
+        'format' => 'required|in:json,csv,zip',
+        'include_structure' => 'boolean'
+    ]);
+    
+    $backupName = $request->name ?: 'backup_' . date('Y-m-d_H-i-s');
+    $selectedCollections = $request->collections;
+    $format = $request->format;
+    $includeStructure = $request->boolean('include_structure');
+    
+    // Obtener información del usuario actual
+    $user = Auth::guard('usuarios')->user();
+    $userId = $user ? $user->_id : null;
+    $userName = $user ? $user->nombre : 'Sistema';
+    $userEmail = $user ? $user->email : 'sistema@localhost';
+    
+    Log::info("Iniciando backup por usuario: {$userName} (ID: {$userId})");
+    
+    // Crear directorio temporal
+    $tempDir = $this->backupPath . 'temp_' . time() . '/';
+    mkdir($tempDir, 0755, true);
+    
+    try {
+        $client = new Client(env('MONGODB_URI', 'mongodb://localhost:27017'));
+        $database = env('MONGODB_DATABASE', 'CoffeSoft');
+        $db = $client->selectDatabase($database);
         
-        $backupName = $request->name ?: 'backup_' . date('Y-m-d_H-i-s');
-        $selectedCollections = $request->collections;
-        $format = $request->format;
-        $includeStructure = $request->boolean('include_structure');
+        $exportedFiles = [];
+        $exportedCollections = [];
         
-        // Obtener información del usuario actual
-        $user = Auth::guard('usuarios')->user();
-        $userId = $user ? $user->_id : null;
-        $userName = $user ? $user->nombre : 'Sistema';
-        $userEmail = $user ? $user->email : 'sistema@localhost';
-        
-        Log::info("Iniciando backup por usuario: {$userName} (ID: {$userId})");
-        
-        // Crear directorio temporal
-        $tempDir = $this->backupPath . 'temp_' . time() . '/';
-        mkdir($tempDir, 0755, true);
-        
-        try {
-            $client = new Client(env('MONGODB_URI', 'mongodb://localhost:27017'));
-            $database = env('MONGODB_DATABASE', 'CoffeSoft');
-            $db = $client->selectDatabase($database);
+        foreach ($selectedCollections as $collectionName) {
+            $collection = $db->selectCollection($collectionName);
+            $documents = $collection->find()->toArray();
             
-            $exportedFiles = [];
-            $exportedCollections = [];
-            
-            foreach ($selectedCollections as $collectionName) {
-                $collection = $db->selectCollection($collectionName);
-                $documents = $collection->find()->toArray();
-                
-                // Registrar colección exportada
-                $exportedCollections[] = [
-                    'name' => $collectionName,
-                    'documents_count' => count($documents)
-                ];
-                
-                // Exportar datos
-                if ($format === 'json') {
-                    $filename = $tempDir . $collectionName . '.json';
-                    file_put_contents($filename, json_encode($documents, JSON_PRETTY_PRINT));
-                    $exportedFiles[] = $filename;
-                } elseif ($format === 'csv') {
-                    $filename = $this->exportToCSV($collectionName, $documents, $tempDir);
-                    $exportedFiles[] = $filename;
-                }
-                
-                // Exportar estructura si se solicita
-                if ($includeStructure) {
-                    $structureFile = $tempDir . $collectionName . '_structure.json';
-                    $indexes = $collection->listIndexes()->toArray();
-                    file_put_contents($structureFile, json_encode($indexes, JSON_PRETTY_PRINT));
-                    $exportedFiles[] = $structureFile;
-                }
-            }
-            
-            // Crear archivo de metadatos con información del usuario
-            $metadata = [
-                'backup_name' => $backupName,
-                'created_at' => Carbon::now()->toDateTimeString(),
-                'created_by' => $userName,
-                'created_by_id' => $userId,
-                'created_by_email' => $userEmail,
-                'collections' => $selectedCollections,
-                'collections_details' => $exportedCollections,
-                'format' => $format,
-                'include_structure' => $includeStructure,
-                'database' => $database,
-                'total_collections' => count($selectedCollections),
-                'total_documents' => array_sum(array_column($exportedCollections, 'documents_count')),
-                'system_info' => [
-                    'php_version' => PHP_VERSION,
-                    'laravel_version' => app()->version(),
-                    'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'Desconocido'
-                ]
+            // Registrar colección exportada
+            $exportedCollections[] = [
+                'name' => $collectionName,
+                'documents_count' => count($documents)
             ];
             
-            file_put_contents($tempDir . 'metadata.json', json_encode($metadata, JSON_PRETTY_PRINT));
-            $exportedFiles[] = $tempDir . 'metadata.json';
-            
-            // Crear archivo de resumen en texto plano
-            $summaryContent = $this->createSummaryContent($metadata);
-            file_put_contents($tempDir . 'RESUMEN.txt', $summaryContent);
-            $exportedFiles[] = $tempDir . 'RESUMEN.txt';
-            
-            // Comprimir si es necesario o si hay múltiples archivos
-            $finalFilename = $backupName . '_' . date('Y-m-d_H-i-s');
-            
-            if ($format === 'zip' || count($exportedFiles) > 1) {
-                $finalFilename .= '.zip';
-                $zipPath = $this->backupPath . $finalFilename;
-                $this->createZip($exportedFiles, $zipPath, $tempDir);
-                
-                // Limpiar archivos temporales
-                $this->deleteDirectory($tempDir);
-            } else {
-                // Mover el único archivo
-                $finalFilename .= '.' . $format;
-                rename($exportedFiles[0], $this->backupPath . $finalFilename);
-                rmdir($tempDir);
+            // Exportar datos
+            if ($format === 'json') {
+                $filename = $tempDir . $collectionName . '.json';
+                file_put_contents($filename, json_encode($documents, JSON_PRETTY_PRINT));
+                $exportedFiles[] = $filename;
+            } elseif ($format === 'csv') {
+                $filename = $this->exportToCSV($collectionName, $documents, $tempDir);
+                $exportedFiles[] = $filename;
             }
             
-            Log::info("Backup creado por {$userName}: {$finalFilename}");
-            
-            return redirect()->route('backups.index')
-                ->with('success', 'Backup creado exitosamente: ' . $finalFilename)
-                ->with('info', "Creado por: {$userName}");
-                
-        } catch (\Exception $e) {
-            // Limpiar en caso de error
-            if (file_exists($tempDir)) {
-                $this->deleteDirectory($tempDir);
+            // Exportar estructura si se solicita
+            if ($includeStructure) {
+                $structureFile = $tempDir . $collectionName . '_structure.json';
+                $indexes = $collection->listIndexes()->toArray();
+                file_put_contents($structureFile, json_encode($indexes, JSON_PRETTY_PRINT));
+                $exportedFiles[] = $structureFile;
             }
+        }
+        
+        // Crear archivo de metadatos con información del usuario
+        $metadata = [
+            'backup_name' => $backupName,
+            'created_at' => Carbon::now()->toDateTimeString(),
+            'created_by' => $userName,
+            'created_by_id' => $userId,
+            'created_by_email' => $userEmail,
+            'collections' => $selectedCollections,
+            'collections_details' => $exportedCollections,
+            'format' => $format,
+            'include_structure' => $includeStructure,
+            'database' => $database,
+            'total_collections' => count($selectedCollections),
+            'total_documents' => array_sum(array_column($exportedCollections, 'documents_count')),
+            'system_info' => [
+                'php_version' => PHP_VERSION,
+                'laravel_version' => app()->version(),
+                'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'Desconocido'
+            ]
+        ];
+        
+        file_put_contents($tempDir . 'metadata.json', json_encode($metadata, JSON_PRETTY_PRINT));
+        $exportedFiles[] = $tempDir . 'metadata.json';
+        
+        // Crear archivo de resumen en texto plano
+        $summaryContent = $this->createSummaryContent($metadata);
+        file_put_contents($tempDir . 'RESUMEN.txt', $summaryContent);
+        $exportedFiles[] = $tempDir . 'RESUMEN.txt';
+        
+        // Comprimir si es necesario o si hay múltiples archivos
+        $finalFilename = $backupName . '_' . date('Y-m-d_H-i-s');
+        
+        if ($format === 'zip' || count($exportedFiles) > 1) {
+            $finalFilename .= '.zip';
+            $zipPath = $this->backupPath . $finalFilename;
+            $this->createZip($exportedFiles, $zipPath, $tempDir);
             
-            Log::error("Error al crear backup por {$userName}: " . $e->getMessage());
-            
-            return back()->withErrors(['error' => 'Error al crear backup: ' . $e->getMessage()]);
-        }
-    }
-    
-    public function downloadBackup($filename)
-    {
-        $filePath = $this->backupPath . $filename;
-        
-        if (!file_exists($filePath)) {
-            return back()->withErrors(['error' => 'El archivo de backup no existe.']);
+            // Limpiar archivos temporales
+            $this->deleteDirectory($tempDir);
+        } else {
+            // Mover el único archivo
+            $finalFilename .= '.' . $format;
+            rename($exportedFiles[0], $this->backupPath . $finalFilename);
+            rmdir($tempDir);
         }
         
-        // Registrar quién descargó el backup
-        $user = Auth::guard('usuarios')->user();
-        if ($user) {
-            Log::info("Backup '{$filename}' descargado por: {$user->nombre} ({$user->email})");
-        }
-        
-        return response()->download($filePath);
-    }
-    
-    public function deleteBackup($filename)
-    {
-        $filePath = $this->backupPath . $filename;
-        
-        if (!file_exists($filePath)) {
-            return back()->withErrors(['error' => 'El archivo de backup no existe.']);
-        }
-        
-        // Obtener información del backup antes de eliminarlo
-        $metadata = $this->getBackupMetadata($filePath);
-        $backupName = $metadata['backup_name'] ?? $filename;
-        
-        // Registrar quién eliminó el backup
-        $user = Auth::guard('usuarios')->user();
-        if ($user) {
-            Log::warning("Backup '{$backupName}' eliminado por: {$user->nombre} ({$user->email})");
-        }
-        
-        unlink($filePath);
+        Log::info("Backup creado por {$userName}: {$finalFilename}");
         
         return redirect()->route('backups.index')
-            ->with('success', 'Backup eliminado exitosamente.')
-            ->with('info', "Backup '{$backupName}' eliminado por {$user->nombre}");
+            ->with('success', 'Backup creado exitosamente: ' . $finalFilename)
+            ->with('info', "Creado por: {$userName}");
+            
+    } catch (\Exception $e) {
+        // Limpiar en caso de error
+        if (file_exists($tempDir)) {
+            $this->deleteDirectory($tempDir);
+        }
+        
+        Log::error("Error al crear backup por {$userName}: " . $e->getMessage());
+        
+        return back()->withErrors(['error' => 'Error al crear backup: ' . $e->getMessage()]);
     }
+}
+    public function verifyPassword(Request $request)
+{
+    $request->validate([
+        'password' => 'required|string'
+    ]);
+
+    $user = Auth::guard('usuarios')->user();
+    
+    if (!Hash::check($request->password, $user->password)) {
+        return redirect()->route('backups.index')
+            ->with('password_error', 'La contraseña ingresada es incorrecta.')
+            ->with('show_password_modal', true);
+    }
+
+    // Contraseña correcta - guardamos en sesión que ya verificó
+    session(['backup_verified' => true]);
+    
+    return redirect()->route('backups.create');
+}
+public function verifyPasswordRestore(Request $request)
+{
+    $request->validate([
+        'password' => 'required|string'
+    ]);
+
+    $user = Auth::guard('usuarios')->user();
+    
+    if (!Hash::check($request->password, $user->password)) {
+        return redirect()->route('backups.index')
+            ->with('restore_password_error', 'La contraseña ingresada es incorrecta.')
+            ->with('show_restore_password_modal', true);
+    }
+
+    // Contraseña correcta - guardamos en sesión que ya verificó para restaurar
+    session(['restore_verified' => true]);
+    
+    return redirect()->route('backups.restore.form');
+}
+    public function verifyPasswordDownload(Request $request)
+{
+    $request->validate([
+        'password' => 'required|string',
+        'backup_filename' => 'required|string'
+    ]);
+
+    $user = Auth::guard('usuarios')->user();
+    
+    if (!Hash::check($request->password, $user->password)) {
+        return redirect()->route('backups.index')
+            ->with('download_password_error', 'La contraseña ingresada es incorrecta.')
+            ->with('pending_download', $request->backup_filename);
+    }
+
+    // Contraseña correcta - proceder con la descarga
+    return $this->downloadBackup($request->backup_filename);
+}
+
+public function verifyPasswordDelete(Request $request)
+{
+    $request->validate([
+        'password' => 'required|string',
+        'backup_filename' => 'required|string'
+    ]);
+
+    $user = Auth::guard('usuarios')->user();
+    
+    if (!Hash::check($request->password, $user->password)) {
+        return redirect()->route('backups.index')
+            ->with('delete_password_error', 'La contraseña ingresada es incorrecta.')
+            ->with('pending_delete', $request->backup_filename);
+    }
+
+    // Contraseña correcta - proceder con la eliminación
+    return $this->deleteBackup($request->backup_filename);
+}
+    public function downloadBackup($filename)
+{
+    $filePath = $this->backupPath . $filename;
+    
+    if (!file_exists($filePath)) {
+        return back()->withErrors(['error' => 'El archivo de backup no existe.']);
+    }
+    
+    // Registrar quién descargó el backup
+    $user = Auth::guard('usuarios')->user();
+    Log::info("Backup '{$filename}' descargado por: {$user->nombre} ({$user->email})");
+    
+    return response()->download($filePath);
+}
+
+public function deleteBackup($filename)
+{
+    $filePath = $this->backupPath . $filename;
+    
+    if (!file_exists($filePath)) {
+        return back()->withErrors(['error' => 'El archivo de backup no existe.']);
+    }
+    
+    // Obtener información del backup antes de eliminarlo
+    $metadata = $this->getBackupMetadata($filePath);
+    $backupName = $metadata['backup_name'] ?? $filename;
+    
+    // Registrar quién eliminó el backup
+    $user = Auth::guard('usuarios')->user();
+    Log::warning("Backup '{$backupName}' eliminado por: {$user->nombre} ({$user->email})");
+    
+    unlink($filePath);
+    
+    return redirect()->route('backups.index')
+        ->with('success', 'Backup eliminado exitosamente.')
+        ->with('info', "Backup '{$backupName}' eliminado por {$user->nombre}");
+}
     
     public function restoreBackupForm($filename = null)
     {
@@ -436,7 +513,24 @@ class BackupController extends Controller
         Log::error("Error al restaurar backup por {$userName}: " . $e->getMessage());
         Log::error($e->getTraceAsString());
         
-        return back()->withErrors(['error' => 'Error al restaurar backup: ' . $e->getMessage()]);
+        if (!session('restore_verified')) {
+        return redirect()->route('backups.index')
+            ->with('restore_password_error', 'Debes verificar tu identidad primero para restaurar backups.')
+            ->with('show_restore_password_modal', true);
+    }
+    
+    $backups = [];
+    if (file_exists($this->backupPath)) {
+        $files = scandir($this->backupPath);
+        foreach ($files as $file) {
+            if ($file !== '.' && $file !== '..') {
+                $backups[] = $file;
+            }
+        }
+    }
+    
+    return view('admin.backups.restore', compact('backups', 'filename'));
+    
     }
 }
 
@@ -497,45 +591,45 @@ private function convertMongoDBDocument($document)
     // Métodos auxiliares
     
     private function getMongoCollections()
-    {
-        try {
-            Log::info('Intentando obtener colecciones de CoffeSoft');
-            
-            // Obtener la conexión de MongoDB desde config/database.php
-            $connection = config('database.connections.mongodb');
-            
-            // Construir URI de conexión
-            $host = $connection['host'] ?? '127.0.0.1';
-            $port = $connection['port'] ?? 27017;
-            $database = $connection['database'] ?? 'CoffeSoft';
-            $username = $connection['username'] ?? null;
-            $password = $connection['password'] ?? null;
-            
-            // Crear URI de conexión
-            $uri = "mongodb://";
-            if ($username && $password) {
-                $uri .= "{$username}:{$password}@";
-            }
-            $uri .= "{$host}:{$port}";
-            
-            $client = new \MongoDB\Client($uri);
-            $db = $client->selectDatabase($database);
-            
-            $collections = [];
-            foreach ($db->listCollections() as $collectionInfo) {
-                $collectionName = $collectionInfo->getName();
-                $collections[] = $collectionName;
-            }
-            
-            Log::info('Colecciones encontradas en CoffeSoft: ' . implode(', ', $collections));
-            
-            return $collections;
-            
-        } catch (\Exception $e) {
-            Log::error('Error al obtener colecciones: ' . $e->getMessage());
-            return [];
+{
+    try {
+        Log::info('Intentando obtener colecciones de CoffeSoft');
+        
+        // Obtener la conexión de MongoDB desde config/database.php
+        $connection = config('database.connections.mongodb');
+        
+        // Construir URI de conexión
+        $host = $connection['host'] ?? '127.0.0.1';
+        $port = $connection['port'] ?? 27017;
+        $database = $connection['database'] ?? 'CoffeSoft';
+        $username = $connection['username'] ?? null;
+        $password = $connection['password'] ?? null;
+        
+        // Crear URI de conexión
+        $uri = "mongodb://";
+        if ($username && $password) {
+            $uri .= "{$username}:{$password}@";
         }
+        $uri .= "{$host}:{$port}";
+        
+        $client = new \MongoDB\Client($uri);
+        $db = $client->selectDatabase($database);
+        
+        $collections = [];
+        foreach ($db->listCollections() as $collectionInfo) {
+            $collectionName = $collectionInfo->getName();
+            $collections[] = $collectionName;
+        }
+        
+        Log::info('Colecciones encontradas en CoffeSoft: ' . implode(', ', $collections));
+        
+        return $collections;
+        
+    } catch (\Exception $e) {
+        Log::error('Error al obtener colecciones: ' . $e->getMessage());
+        return [];
     }
+}
     
     private function exportToCSV($collectionName, $documents, $tempDir)
 {
@@ -647,37 +741,15 @@ private function convertMongoDBDocument($document)
 {
     $zip = new ZipArchive;
     
-    if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+    if ($zip->open($zipPath, ZipArchive::CREATE) === TRUE) {
         foreach ($files as $file) {
-            if (file_exists($file)) {
-                // Obtener solo el nombre del archivo, no la ruta completa
-                $fileName = basename($file);
-                $zip->addFile($file, $fileName);
-            }
+            $relativePath = str_replace($basePath, '', $file);
+            $zip->addFile($file, $relativePath);
         }
         $zip->close();
-        
-        // Verificar que el ZIP se creó correctamente
-        if (file_exists($zipPath)) {
-            Log::info("ZIP creado exitosamente: {$zipPath}");
-            Log::info("Tamaño del ZIP: " . filesize($zipPath) . " bytes");
-            
-            // Verificar contenido del ZIP
-            $verifyZip = new ZipArchive;
-            if ($verifyZip->open($zipPath) === TRUE) {
-                Log::info("Archivos en el ZIP:");
-                for ($i = 0; $i < $verifyZip->numFiles; $i++) {
-                    $stat = $verifyZip->statIndex($i);
-                    Log::info(" - " . $stat['name']);
-                }
-                $verifyZip->close();
-            }
-        }
-        
         return true;
     }
     
-    Log::error("No se pudo crear el ZIP en: {$zipPath}");
     return false;
 }
     
@@ -725,40 +797,40 @@ private function convertMongoDBDocument($document)
      * Crea contenido de resumen en texto plano
      */
     private function createSummaryContent($metadata)
-    {
-        $content = "========================================\n";
-        $content .= "         RESUMEN DEL BACKUP\n";
-        $content .= "========================================\n\n";
-        
-        $content .= "INFORMACIÓN GENERAL:\n";
-        $content .= "-------------------\n";
-        $content .= "Nombre: {$metadata['backup_name']}\n";
-        $content .= "Fecha: {$metadata['created_at']}\n";
-        $content .= "Creado por: {$metadata['created_by']}\n";
-        $content .= "Email: {$metadata['created_by_email']}\n";
-        $content .= "Base de datos: {$metadata['database']}\n";
-        $content .= "Formato: {$metadata['format']}\n";
-        $content .= "Incluye estructura: " . ($metadata['include_structure'] ? 'Sí' : 'No') . "\n\n";
-        
-        $content .= "COLECCIONES INCLUIDAS:\n";
-        $content .= "----------------------\n";
-        foreach ($metadata['collections_details'] as $collection) {
-            $content .= "- {$collection['name']}: {$collection['documents_count']} documentos\n";
-        }
-        $content .= "\nTotal colecciones: {$metadata['total_collections']}\n";
-        $content .= "Total documentos: {$metadata['total_documents']}\n\n";
-        
-        $content .= "INFORMACIÓN DEL SISTEMA:\n";
-        $content .= "------------------------\n";
-        $content .= "PHP: {$metadata['system_info']['php_version']}\n";
-        $content .= "Laravel: {$metadata['system_info']['laravel_version']}\n";
-        $content .= "Servidor: {$metadata['system_info']['server']}\n";
-        $content .= "\n========================================\n";
-        $content .= "Backup generado automáticamente por el sistema\n";
-        $content .= "========================================\n";
-        
-        return $content;
+{
+    $content = "========================================\n";
+    $content .= "         RESUMEN DEL BACKUP\n";
+    $content .= "========================================\n\n";
+    
+    $content .= "INFORMACIÓN GENERAL:\n";
+    $content .= "-------------------\n";
+    $content .= "Nombre: {$metadata['backup_name']}\n";
+    $content .= "Fecha: {$metadata['created_at']}\n";
+    $content .= "Creado por: {$metadata['created_by']}\n";
+    $content .= "Email: {$metadata['created_by_email']}\n";
+    $content .= "Base de datos: {$metadata['database']}\n";
+    $content .= "Formato: {$metadata['format']}\n";
+    $content .= "Incluye estructura: " . ($metadata['include_structure'] ? 'Sí' : 'No') . "\n\n";
+    
+    $content .= "COLECCIONES INCLUIDAS:\n";
+    $content .= "----------------------\n";
+    foreach ($metadata['collections_details'] as $collection) {
+        $content .= "- {$collection['name']}: {$collection['documents_count']} documentos\n";
     }
+    $content .= "\nTotal colecciones: {$metadata['total_collections']}\n";
+    $content .= "Total documentos: {$metadata['total_documents']}\n\n";
+    
+    $content .= "INFORMACIÓN DEL SISTEMA:\n";
+    $content .= "------------------------\n";
+    $content .= "PHP: {$metadata['system_info']['php_version']}\n";
+    $content .= "Laravel: {$metadata['system_info']['laravel_version']}\n";
+    $content .= "Servidor: {$metadata['system_info']['server']}\n";
+    $content .= "\n========================================\n";
+    $content .= "Backup generado automáticamente por el sistema\n";
+    $content .= "========================================\n";
+    
+    return $content;
+}
     
     /**
      * Método para ver detalles del backup
@@ -933,3 +1005,4 @@ public function verifyRestore()
     }
 }
 }
+

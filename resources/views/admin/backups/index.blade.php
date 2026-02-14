@@ -8,12 +8,13 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h4><i class="fas fa-database"></i> Gestión de Backups</h4>
                     <div>
-                        <a href="{{ route('backups.create') }}" class="btn btn-primary">
+                        <!-- Cambiamos el enlace por un botón que abre el modal -->
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#passwordModal">
                             <i class="fas fa-plus"></i> Nuevo Backup
-                        </a>
-                        <a href="{{ route('backups.restore.form') }}" class="btn btn-success">
+                        </button>
+                        <button type="button" data-bs-toggle="modal" data-bs-target="#restorePasswordModal" class="btn btn-success">
                             <i class="fas fa-upload"></i> Restaurar Backup
-                        </a>
+                        </button>
                     </div>
                 </div>
 
@@ -100,24 +101,26 @@
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <a href="{{ route('backups.download', $backup['name']) }}" 
-                                               class="btn btn-sm btn-success" title="Descargar">
+                                            <button type="button" 
+                                               class="btn btn-sm btn-success" onclick="showDownloadModal('{{ $backup['name'] }}')">
                                                 <i class="fas fa-download"></i>
-                                            </a>
+                                            </button>
 
-                                            <a href="{{ route('backups.restore.form', $backup['name']) }}" 
+
+
+
+                                            <button type="button" data-bs-toggle="modal" data-bs-target="#restorePasswordModal" 
                                                class="btn btn-sm btn-warning" title="Restaurar">
                                                 <i class="fas fa-upload"></i>
-                                            </a>
-                                            <form action="{{ route('backups.delete', $backup['name']) }}" 
-                                                  method="POST" class="d-inline"
-                                                  onsubmit="return confirm('¿Eliminar el backup \'{{ $backup['name'] }}\'?\n\nCreado por: {{ $backup['created_by'] }}\nFecha: {{ $backup['date'] }}')">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="btn btn-sm btn-danger" title="Eliminar">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </form>
+                                            </button>
+
+
+                                            <button type="button" 
+                                                class="btn btn-sm btn-danger" 
+                                                onclick="showDeleteModal('{{ $backup['name'] }}')"
+                                                title="Eliminar">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -139,23 +142,287 @@
     </div>
 </div>
 
-<!-- Modal para detalles del backup -->
-<div class="modal fade" id="backupDetailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<script>
+function showDownloadModal(filename) {
+    document.getElementById('download_filename').value = filename;
+    document.getElementById('download_backup_name').textContent = filename;
+    
+    var modal = new bootstrap.Modal(document.getElementById('downloadPasswordModal'));
+    modal.show();
+}
+
+function showDeleteModal(filename) {
+    document.getElementById('delete_filename').value = filename;
+    document.getElementById('delete_backup_name').textContent = filename;
+    
+    var modal = new bootstrap.Modal(document.getElementById('deletePasswordModal'));
+    modal.show();
+}
+</script>
+
+<!-- Modal de verificación de contraseña backup -->
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Detalles del Backup</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="passwordModalLabel">
+                    <i class="fas fa-lock"></i> Verificar identidad
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="modal-body" id="backupDetailsContent">
-                <!-- Los detalles se cargarán aquí via AJAX -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-            </div>
+            
+            <form action="{{ route('backups.verify-password') }}" method="POST">
+                @csrf
+                <div class="modal-body">
+                    <p>Para acceder a la creación de backups, por favor confirma tu identidad:</p>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <strong>Contraseña</strong>
+                        </label>
+                        <input type="password" 
+                               class="form-control @if(session('password_error')) is-invalid @endif" 
+                               id="password" 
+                               name="password" 
+                               required 
+                               autocomplete="off"
+                               placeholder="Ingresa tu contraseña">
+                        
+                        @if(session('password_error'))
+                            <div class="invalid-feedback">
+                                {{ session('password_error') }}
+                            </div>
+                        @endif
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <small>Esta verificación adicional protege contra accesos no autorizados.</small>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Verificar y continuar
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+
+<!-- Modal para recuperacion de contraseñas para restauracion de backup -->
+<div class="modal fade" id="restorePasswordModal" tabindex="-1" aria-labelledby="restorePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title" id="restorePasswordModalLabel">
+                    <i class="fas fa-lock"></i> Verificar identidad
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            
+            <form action="{{ route('backups.verify-password-restore') }}" method="POST">
+                @csrf
+                <div class="modal-body">
+                    <p>Para acceder a la restauración de backups, por favor confirma tu identidad:</p>
+                    
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <strong>Contraseña</strong>
+                        </label>
+                        <input type="password" 
+                               class="form-control @if(session('restore_password_error')) is-invalid @endif" 
+                               id="password" 
+                               name="password" 
+                               required 
+                               autocomplete="off"
+                               placeholder="Ingresa tu contraseña">
+                        
+                        @if(session('restore_password_error'))
+                            <div class="invalid-feedback">
+                                {{ session('restore_password_error') }}
+                            </div>
+                        @endif
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <small>Esta verificación adicional protege contra accesos no autorizados.</small>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Verificar y continuar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Modal para DESCARGAR BACKUP -->
+<div class="modal fade" id="downloadPasswordModal" tabindex="-1" aria-labelledby="downloadPasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title" id="downloadPasswordModalLabel">
+                    <i class="fas fa-lock"></i> Verificar identidad para descargar
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            
+            <form action="{{ route('backups.verify-password-download') }}" method="POST" id="downloadVerifyForm">
+                @csrf
+                <input type="hidden" name="backup_filename" id="download_filename" value="">
+                
+                <div class="modal-body">
+                    <p>Para descargar este backup, por favor confirma tu identidad:</p>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-download"></i>
+                        <strong>Backup:</strong> <span id="download_backup_name"></span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="download_password" class="form-label">
+                            <strong>Contraseña</strong>
+                        </label>
+                        <input type="password" 
+                               class="form-control @if(session('download_password_error')) is-invalid @endif" 
+                               id="download_password" 
+                               name="password" 
+                               required 
+                               autocomplete="off"
+                               placeholder="Ingresa tu contraseña">
+                        
+                        @if(session('download_password_error'))
+                            <div class="invalid-feedback">
+                                {{ session('download_password_error') }}
+                            </div>
+                        @endif
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-info">
+                        <i class="fas fa-check"></i> Verificar y descargar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para ELIMINAR BACKUP -->
+<div class="modal fade" id="deletePasswordModal" tabindex="-1" aria-labelledby="deletePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deletePasswordModalLabel">
+                    <i class="fas fa-lock"></i> Verificar identidad para eliminar
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            
+            <form action="{{ route('backups.verify-password-delete') }}" method="POST" id="deleteVerifyForm">
+                @csrf
+                <input type="hidden" name="backup_filename" id="delete_filename" value="">
+                
+                <div class="modal-body">
+                    <p>Para eliminar este backup, por favor confirma tu identidad:</p>
+                    
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>¡Advertencia!</strong> Esta acción no se puede deshacer.
+                        <br>
+                        <strong>Backup:</strong> <span id="delete_backup_name"></span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="delete_password" class="form-label">
+                            <strong>Contraseña</strong>
+                        </label>
+                        <input type="password" 
+                               class="form-control @if(session('delete_password_error')) is-invalid @endif" 
+                               id="delete_password" 
+                               name="password" 
+                               required 
+                               autocomplete="off"
+                               placeholder="Ingresa tu contraseña">
+                        
+                        @if(session('delete_password_error'))
+                            <div class="invalid-feedback">
+                                {{ session('delete_password_error') }}
+                            </div>
+                        @endif
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-check"></i> Verificar y eliminar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+<!-- Script para abrir el modal automáticamente si hay error de contraseña -->
+@if(session('password_error'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var modal = new bootstrap.Modal(document.getElementById('passwordModal'));
+        modal.show();
+    });
+</script>
+@endif
+
+<!-- Script para abrir el modal automáticamente si hay error de contraseña -->
+@if(session('restore_password_error'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var modal = new bootstrap.Modal(document.getElementById('restorePasswordModal'));
+        modal.show();
+    });
+</script>
+@endif
+
+<!-- Scripts para abrir modales con errores -->
+@if(session('download_password_error'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var modal = new bootstrap.Modal(document.getElementById('downloadPasswordModal'));
+        modal.show();
+    });
+</script>
+@endif
+
+@if(session('delete_password_error'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var modal = new bootstrap.Modal(document.getElementById('deletePasswordModal'));
+        modal.show();
+    });
+</script>
+@endif
+
 @endsection
 
 @push('styles')
